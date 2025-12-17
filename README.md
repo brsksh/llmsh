@@ -13,7 +13,6 @@ Type what you want to do in natural language, press `Ctrl+O`, and insert ready-t
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Debugging](#debugging)
-- [Architecture](#architecture)
 - [License](#license)
 
 ---
@@ -157,19 +156,6 @@ python3 ~/.oh-my-zsh/custom/plugins/llmsh/llmsh_api.py "list files"
 ```
 
 ---
-
-## Architecture
-
-```mermaid
-flowchart LR
-  userInput[User types description] --> zleWidget[llmsh_suggest (ZLE widget)]
-  zleWidget --> pythonClient[llmsh_api.py]
-  pythonClient --> ollamaAPI[Ollama-compatible API]
-  ollamaAPI --> pythonClient
-  pythonClient --> zleWidget
-  zleWidget --> fzfSelection[fzf command selection]
-  fzfSelection --> shellBuffer[Insert selected command into buffer]
-```
 
 ---
 
