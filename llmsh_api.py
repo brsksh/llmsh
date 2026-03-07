@@ -32,22 +32,23 @@ def log(message, data=None):
         logging.debug(message)
 
 
-def query_llm(user_query: str) -> list[str]:
-    """Send query to Ollama API and return command suggestions."""
+def query_llm(user_query: str) -> list[tuple[str, str]]:
+    """Send query to Ollama API and return command suggestions with descriptions."""
 
     url = os.environ.get("LLMSH_URL", "http://localhost:11434")
     model = os.environ.get("LLMSH_MODEL", "llama3")
-    token = os.environ.get("LLMSH_TOKEN", "")
+    token = (os.environ.get("LLMSH_TOKEN", "") or "").strip()
     count = os.environ.get("LLMSH_COMMAND_COUNT", "5")
     timeout = int(os.environ.get("LLMSH_TIMEOUT", "30"))
 
     prompt = f"""Generate {count} shell commands for this task: {user_query}
 
-Return ONLY a JSON object with a "commands" key containing a list of command strings.
-No explanations, no markdown, just valid JSON.
+Return ONLY a JSON object with a "commands" key containing a list of objects.
+Each object must have "cmd" (the shell command) and "description" (short one-line explanation).
+No explanations outside JSON, no markdown, just valid JSON.
 
 Example response:
-{{"commands": ["ls -la", "find . -type f", "du -sh *"]}}"""
+{{"commands": [{{"cmd": "ls -la", "description": "List all files with details"}}, {{"cmd": "find . -type f", "description": "Find regular files in current tree"}}]}}"""
 
     headers = {"Content-Type": "application/json"}
     if token:
@@ -91,49 +92,66 @@ Example response:
         return []
 
 
-def parse_commands(content: str) -> list[str]:
-    """Extract commands from LLM response."""
+def parse_commands(content: str) -> list[tuple[str, str]]:
+    """Extract commands (and optional descriptions) from LLM response."""
 
     # Try to extract JSON from markdown code block
     md_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
     if md_match:
         content = md_match.group(1).strip()
 
-    # Try to find JSON object
-    json_match = re.search(
-        r'\{[^{}]*"commands"\s*:\s*\[.*?\][^{}]*\}', content, re.DOTALL
-    )
-    if json_match:
-        content = json_match.group(0)
+    # Extract outermost {...} so nested objects (cmd/description) are included
+    start = content.find('{"commands"')
+    if start == -1:
+        start = content.find('{')
+    if start != -1:
+        depth = 0
+        for i in range(start, len(content)):
+            if content[i] == '{':
+                depth += 1
+            elif content[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    content = content[start : i + 1]
+                    break
 
     try:
         data = json.loads(content)
         commands = data.get("commands", [])
 
-        if isinstance(commands, list):
-            return [str(cmd).strip() for cmd in commands if cmd]
+        if not isinstance(commands, list):
+            return []
+
+        result: list[tuple[str, str]] = []
+        for item in commands:
+            if isinstance(item, dict):
+                cmd = (item.get("cmd") or "").strip()
+                desc = (item.get("description") or "").strip()
+                if cmd:
+                    result.append((cmd, desc))
+            elif isinstance(item, str) and item.strip():
+                # Legacy: plain list of command strings
+                result.append((item.strip(), ""))
+        return result
 
     except json.JSONDecodeError:
         log("JSON parse failed, trying line extraction")
 
-        # Fallback: extract lines that look like commands
-        lines: list[str] = []
+        # Fallback: extract lines that look like commands (no description)
+        lines: list[tuple[str, str]] = []
         for line in content.split("\n"):
             line = line.strip()
             if not line:
                 continue
-            # Skip common non-command patterns
             if line.startswith(("#", "{", "}", "[", "]", '"', "//")):
                 continue
-            # Remove list prefixes
             line = re.sub(r"^[\d]+[\.\)]\s*", "", line)
             line = re.sub(r"^[-*]\s*", "", line)
             line = line.strip('`"\'')
             if line:
-                lines.append(line)
+                lines.append((line, ""))
 
-        if lines:
-            return lines
+        return lines
 
     return []
 
@@ -143,12 +161,12 @@ if __name__ == "__main__":
         print("Usage: llmsh_api.py <query>", file=sys.stderr)
         sys.exit(1)
 
-    commands = query_llm(sys.argv[1])
+    suggestions = query_llm(sys.argv[1])
 
-    if not commands:
+    if not suggestions:
         sys.exit(1)
 
-    for cmd in commands:
-        print(cmd)
+    for cmd, description in suggestions:
+        print(cmd + "\t" + description)
 
 

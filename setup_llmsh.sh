@@ -25,6 +25,11 @@ error() {
   echo -e "${COLOR_ERROR}ERROR:${COLOR_RESET} $*"
 }
 
+if [ "$(uname -s)" != "Darwin" ]; then
+  error "llmsh supports macOS only."
+  exit 1
+fi
+
 info "Starting llmsh setup"
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -147,26 +152,72 @@ prompt_default() {
 LLMSH_URL_VALUE="$(prompt_default LLMSH_URL 'LLMSH_URL (Ollama endpoint URL)' 'http://localhost:11434')"
 LLMSH_MODEL_VALUE="$(prompt_default LLMSH_MODEL 'LLMSH_MODEL (model name)' 'llama3')"
 
+USE_VAULT=0
 if [ "$NON_INTERACTIVE" -eq 1 ]; then
   LLMSH_TOKEN_VALUE="${LLMSH_TOKEN:-}"
+  USE_VAULT="${LLMSH_USE_VAULT:-0}"
 else
   read -r -p "LLMSH_TOKEN (Bearer token, leave empty if not needed) []: " LLMSH_TOKEN_VALUE
+  read -r -p "Use HashiCorp Vault for LLMSH_TOKEN (auth on demand)? [y/N]: " vault_choice
+  case "$vault_choice" in
+    [Yy]*) USE_VAULT=1 ;;
+    *) USE_VAULT=0 ;;
+  esac
+fi
+
+if [ "$USE_VAULT" -eq 1 ]; then
+  if ! command -v vault >/dev/null 2>&1; then
+    warn "vault not found in PATH; vault.zsh will need it."
+  else
+    info "Found 'vault'"
+  fi
+  VAULT_ADDR_VALUE="$(prompt_default VAULT_ADDR 'VAULT_ADDR (Vault server URL)' 'https://vault.example.com')"
 fi
 
 LLMSH_HOTKEY_VALUE="$(prompt_default LLMSH_HOTKEY 'LLMSH_HOTKEY (ZLE keybinding)' '^o')"
 LLMSH_COMMAND_COUNT_VALUE="$(prompt_default LLMSH_COMMAND_COUNT 'LLMSH_COMMAND_COUNT (number of suggestions)' '5')"
 LLMSH_TIMEOUT_VALUE="$(prompt_default LLMSH_TIMEOUT 'LLMSH_TIMEOUT (API timeout in seconds)' '30')"
 
+if [ "$USE_VAULT" -eq 1 ]; then
+  LLMSH_TOKEN_LINE="export LLMSH_TOKEN=\"\""
+else
+  LLMSH_TOKEN_LINE="export LLMSH_TOKEN=\"${LLMSH_TOKEN_VALUE}\""
+fi
+
 cat > "$CONFIG_FILE" <<EOF
 export LLMSH_URL="${LLMSH_URL_VALUE}"
 export LLMSH_MODEL="${LLMSH_MODEL_VALUE}"
-export LLMSH_TOKEN="${LLMSH_TOKEN_VALUE}"
+${LLMSH_TOKEN_LINE}
 export LLMSH_HOTKEY="${LLMSH_HOTKEY_VALUE}"
 export LLMSH_COMMAND_COUNT=${LLMSH_COMMAND_COUNT_VALUE}
 export LLMSH_TIMEOUT=${LLMSH_TIMEOUT_VALUE}
 EOF
 
 info "Configuration written to $CONFIG_FILE"
+
+if [ "$USE_VAULT" -eq 1 ]; then
+  VAULT_ZSH="${CONFIG_DIR}/vault.zsh"
+  cat > "$VAULT_ZSH" <<VAULTEOF
+# llmsh: Vault-based token (auth on demand)
+# Edit the vault kv path and field below to match your secret.
+export VAULT_ADDR="${VAULT_ADDR_VALUE}"
+
+llmsh_auth() {
+  vault token lookup &>/dev/null || vault login -method=oidc
+  export LLMSH_TOKEN=\$(vault kv get -field=token kv/data/llmsh | tr -d '\\n\\r')
+  echo "llmsh: Token set."
+}
+
+llmsh_suggest_wrapper() {
+  [[ -z "\$LLMSH_TOKEN" ]] && llmsh_auth
+  zle llmsh_suggest
+}
+zle -N llmsh_suggest_wrapper
+bindkey "\${LLMSH_HOTKEY:-^o}" llmsh_suggest_wrapper
+VAULTEOF
+  info "Vault snippet written to $VAULT_ZSH"
+  info "Add to the end of your ~/.zshrc: source $VAULT_ZSH"
+fi
 
 info "Setup complete."
 info "Add 'llmsh' to your plugins list in ~/.zshrc, for example:"
