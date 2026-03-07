@@ -55,7 +55,7 @@ _llmsh_spinner_start() {
         color_reset=$'\033[0m'
     fi
 
-    local message="Querying LLM..."
+    local message="llmsh: Getting suggestions…"
     local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local frame_count=${#frames[@]}
 
@@ -167,7 +167,7 @@ llmsh_suggest() {
         if [ -n "$commands" ]; then
             log_debug "Python output (may contain errors): $commands"
         fi
-        llmsh_error "No commands received from LLM. Check /tmp/llmsh_debug.log"
+        llmsh_error "No suggestions for this query. Check /tmp/llmsh_debug.log"
         zle reset-prompt
         return 0
     fi
@@ -177,13 +177,39 @@ llmsh_suggest() {
 
     if [ -z "$clean_commands" ]; then
         log_debug "No clean commands after filtering"
-        llmsh_error "No valid commands received from LLM. Check /tmp/llmsh_debug.log"
+        llmsh_error "No valid suggestions. Check /tmp/llmsh_debug.log"
         zle reset-prompt
         return 0
     fi
 
-    # Let user select with fzf
-    local selected=$(echo "$clean_commands" | fzf --ansi --height=~10 --cycle --prompt="Select command: " 2>&1)
+    # Build header: tool identity + query context + shortcuts
+    local query_display="${user_query//$'\n'/ }"
+    query_display="${query_display//\"/\'}"
+    [[ ${#query_display} -gt 52 ]] && query_display="${query_display:0:49}…"
+    local fzf_header=$'llmsh — Command suggestions\n  '"$query_display"$'\n  ↑↓ choose · Enter insert · Esc cancel'
+
+    # Theme: cohesive tool look (border, accent pointer, description preview)
+    local fzf_colors="border:8,label:6,query:15,prompt:6,header:8,pointer:3,marker:3,fg:15,bg:-1,hl:3,hl+:3,info:8,preview-border:8,preview-label:6"
+    [[ -n "$LLMSH_NO_COLOR" ]] && fzf_colors=""
+    local fzf_opts=(
+        --height=~12
+        --cycle
+        --border=rounded
+        --layout=reverse
+        --pointer='▸'
+        --marker='◦'
+        --prompt="Choose suggestion › "
+        --header="$fzf_header"
+        --delimiter=$'\t'
+        --with-nth=1
+        --preview='[ -n "{2}" ] && printf "\n  %s\n" "{2}" || echo "  No description"'
+        --preview-window='down:4:wrap,border-top'
+        --info=inline-right
+        --scrollbar=' '
+    )
+    [[ -n "$fzf_colors" ]] && fzf_opts+=(--color="$fzf_colors")
+    local selected
+    selected=$(echo "$clean_commands" | fzf --ansi "${fzf_opts[@]}" 2>&1)
     local fzf_exit=$?
 
     if [ $fzf_exit -ne 0 ] && [ $fzf_exit -ne 130 ]; then
@@ -191,17 +217,34 @@ llmsh_suggest() {
     fi
 
     if [ -n "$selected" ]; then
-        BUFFER="$selected"
+        # Use only the command (first column); description is after the tab
+        local cmd_only="${selected%%$'\t'*}"
+        BUFFER="$cmd_only"
         CURSOR=${#BUFFER}
-        log_debug "Selected: $selected"
-        # Optional: Show brief confirmation (can be disabled if too verbose)
-        if [ -z "$LLMSH_NO_SPINNER" ]; then
-            # Brief visual feedback - command is now in buffer
-        fi
+        log_debug "Selected: $cmd_only"
     fi
 
     zle reset-prompt
     return 0
+}
+
+# Update plugin from git (run from shell: llmsh_update)
+llmsh_update() {
+    if [[ ! -d "$LLMSH_PLUGIN_DIR" ]]; then
+        llmsh_error "LLMSH_PLUGIN_DIR not set or missing."
+        return 1
+    fi
+    if ! git -C "$LLMSH_PLUGIN_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
+        llmsh_warn "Not a git repository: $LLMSH_PLUGIN_DIR"
+        llmsh_info "Update by re-running install_llmsh.sh or git pull in your clone."
+        return 1
+    fi
+    if git -C "$LLMSH_PLUGIN_DIR" pull --ff-only; then
+        llmsh_info "llmsh updated. Reload your shell (e.g. exec zsh) to use the new version."
+    else
+        llmsh_error "git pull failed. Fix conflicts or update manually."
+        return 1
+    fi
 }
 
 # Register widget and keybinding

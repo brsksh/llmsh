@@ -10,6 +10,7 @@ Type what you want to do in natural language, press `Ctrl+O`, and insert ready-t
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Updating](#updating)
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Debugging](#debugging)
@@ -22,7 +23,7 @@ Type what you want to do in natural language, press `Ctrl+O`, and insert ready-t
 - **Natural language → shell commands**: Describe your task, get concrete shell commands back.
 - **Ollama-compatible backend**: Works with local and remote Ollama-compatible APIs.
 - **Bearer token support**: Use `LLMSH_TOKEN` for remote, authenticated instances.
-- **fzf integration**: Fuzzy-select the best suggestion before inserting it.
+- **fzf integration**: Fuzzy-select from suggestions; each command can show a short description in the picker.
 - **Configurable**: Model, endpoint, hotkey, timeout and number of suggestions are all tunable.
 - **Polished CLI UX**: Colored INFO/WARNING/ERROR messages and a small spinner while waiting for the LLM.
 - **Clean config**: Uses XDG config (`~/.config/llmsh/config.zsh`) instead of polluting `~/.zshrc`.
@@ -31,6 +32,7 @@ Type what you want to do in natural language, press `Ctrl+O`, and insert ready-t
 
 ## Requirements
 
+- **macOS** (only supported platform)
 - zsh + Oh-My-Zsh
 - python3 (3.8+)
 - fzf
@@ -41,6 +43,8 @@ Type what you want to do in natural language, press `Ctrl+O`, and insert ready-t
 ---
 
 ## Installation
+
+llmsh supports **macOS only**. On other platforms the install and setup scripts will exit with an error.
 
 ### One-line install (recommended)
 
@@ -75,6 +79,15 @@ source ~/.zshrc
 
 ---
 
+## Updating
+
+- **From a shell where llmsh is loaded:** run `llmsh_update`. This runs `git pull --ff-only` in the plugin directory and tells you to reload the shell.
+- **From a fresh clone or any terminal:** run the install script again from the repo (it will `git pull` if the plugin dir already exists):  
+  `bash <(curl -fsSL https://raw.githubusercontent.com/brsksh/llmsh/main/install_llmsh.sh)`
+- If the plugin is a **symlink** to your own clone, run `git pull` in that clone to update.
+
+---
+
 ## Usage
 
 1. After installation, run the interactive setup to configure `llmsh`:
@@ -91,7 +104,7 @@ source ~/.zshrc
 
 3. Press `Ctrl+O` (default hotkey) to trigger command suggestions.
 4. Wait for the LLM to respond (a spinner indicates progress).
-5. Select a command in `fzf` and press Enter to insert it into your prompt.
+5. Select a command in the picker (fzf shows the command and a short description). Press Enter to insert the command into your prompt.
 
 ---
 
@@ -121,6 +134,29 @@ LLMSH_TOKEN="your-bearer-token" \
 LLMSH_HOTKEY="^o" \
 LLMSH_COMMAND_COUNT=5 \
 LLMSH_TIMEOUT=30 \
+./setup_llmsh.sh --non-interactive
+```
+
+### Optional: Token from HashiCorp Vault (macOS)
+
+During interactive setup you can choose to use **HashiCorp Vault** for `LLMSH_TOKEN` (auth on demand). The setup then writes `~/.config/llmsh/vault.zsh`, which defines `llmsh_auth` and a wrapper widget that fetches the token from Vault when needed.
+
+1. Run `./setup_llmsh.sh`, leave `LLMSH_TOKEN` empty, and answer **y** to “Use HashiCorp Vault for LLMSH_TOKEN?”.
+2. Add to the **end** of your `~/.zshrc`:
+
+   ```bash
+   source ~/.config/llmsh/vault.zsh
+   ```
+
+3. Reload your shell. The first time you press the llmsh hotkey, `llmsh_auth` will run (e.g. `vault login -method=oidc` if needed) and set `LLMSH_TOKEN` from Vault. `VAULT_ADDR` is set inside `vault.zsh`; adjust the default in the file or set it before sourcing if you use another Vault server.
+
+For non-interactive setup with Vault:
+
+```bash
+LLMSH_USE_VAULT=1 \
+VAULT_ADDR="https://vault.example.com" \
+LLMSH_URL="https://..." \
+LLMSH_MODEL="llama3" \
 ./setup_llmsh.sh --non-interactive
 ```
 

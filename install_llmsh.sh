@@ -30,6 +30,11 @@ error() {
   echo -e "${COLOR_ERROR}ERROR:${COLOR_RESET} $*"
 }
 
+if [ "$(uname -s)" != "Darwin" ]; then
+  error "llmsh supports macOS only."
+  exit 1
+fi
+
 info "Installing llmsh"
 
 if ! command -v git >/dev/null 2>&1; then

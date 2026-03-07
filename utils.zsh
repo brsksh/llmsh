@@ -4,17 +4,25 @@
 # llmsh - Utility functions
 # ============================================
 
-# Color configuration
+# Color configuration (INFO/WARN/ERROR + extended theme for panels, accents)
 if [ -t 1 ] && [ -z "$LLMSH_NO_COLOR" ]; then
     LLMSH_COLOR_INFO=$'%F{cyan}'
     LLMSH_COLOR_WARN=$'%F{yellow}'
     LLMSH_COLOR_ERROR=$'%F{red}'
     LLMSH_COLOR_RESET=$'%f'
+    LLMSH_COLOR_PANEL=$'\033[38;5;239m'
+    LLMSH_COLOR_ACCENT=$'\033[38;5;215m'
+    LLMSH_COLOR_MUTED=$'\033[38;5;246m'
+    LLMSH_COLOR_BOLD=$'\033[1m'
 else
     LLMSH_COLOR_INFO=""
     LLMSH_COLOR_WARN=""
     LLMSH_COLOR_ERROR=""
     LLMSH_COLOR_RESET=""
+    LLMSH_COLOR_PANEL=""
+    LLMSH_COLOR_ACCENT=""
+    LLMSH_COLOR_MUTED=""
+    LLMSH_COLOR_BOLD=""
 fi
 
 llmsh_info() {
@@ -29,35 +37,8 @@ llmsh_error() {
     print -P "${LLMSH_COLOR_ERROR}ERROR:${LLMSH_COLOR_RESET} $*"
 }
 
-detect_os() {
-    case "$(uname -s)" in
-        Linux*)  echo "linux" ;;
-        Darwin*) echo "mac" ;;
-        *)       echo "unknown" ;;
-    esac
-}
-
 get_install_cmd() {
-    local os=$(detect_os)
-    case "$os" in
-        "linux")
-            if command -v apt-get &> /dev/null; then
-                echo "sudo apt install"
-            elif command -v dnf &> /dev/null; then
-                echo "sudo dnf install"
-            elif command -v pacman &> /dev/null; then
-                echo "sudo pacman -S"
-            else
-                echo "your package manager"
-            fi
-            ;;
-        "mac")
-            echo "brew install"
-            ;;
-        *)
-            echo "your package manager"
-            ;;
-    esac
+    echo "brew install"
 }
 
 check_command() {
